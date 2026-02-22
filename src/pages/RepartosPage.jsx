@@ -344,6 +344,20 @@ export default function RepartosPage() {
     return pedidosOrdenados.filter((p) => !ESTADOS_CERRADOS.has(String(p?.estado_pedido || '').toLowerCase()));
   }, [pedidosOrdenados, tab]);
 
+  const pedidosPorLocal = useMemo(() => {
+    if (!modoTodosLocales) return [];
+    const grupos = new Map();
+    for (const pedido of pedidosFiltrados) {
+      const localId = getPedidoLocalId(pedido) || 'sin_local';
+      const localNombre = pedido?.__localNombre || 'Local';
+      if (!grupos.has(localId)) {
+        grupos.set(localId, { localId, localNombre, pedidos: [] });
+      }
+      grupos.get(localId).pedidos.push(pedido);
+    }
+    return Array.from(grupos.values()).sort((a, b) => a.localNombre.localeCompare(b.localNombre));
+  }, [modoTodosLocales, pedidosFiltrados]);
+
   const opcionesEstado = useMemo(() => {
     if (!Array.isArray(estadosDisponibles) || estadosDisponibles.length === 0) return ESTADOS_REPARTIDOR_UI;
     const fromConfig = ESTADOS_REPARTIDOR_UI.filter((e) => estadosDisponibles.includes(e.value));
@@ -529,87 +543,166 @@ export default function RepartosPage() {
         </Box>
 
         <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-          <Paper sx={{ overflowX: 'auto' }}>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>N orden</TableCell>
-                  {modoTodosLocales && <TableCell>Local</TableCell>}
-                  <TableCell>Fecha</TableCell>
-                  <TableCell>Cliente</TableCell>
-                  <TableCell>Telefono</TableCell>
-                  <TableCell>Direccion</TableCell>
-                  <TableCell>Total</TableCell>
-                  <TableCell>Estado</TableCell>
-                  <TableCell>Repartidor</TableCell>
-                  <TableCell>Acciones</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {pedidosFiltrados.map((p) => (
-                  <TableRow key={p._id} hover>
-                    <TableCell>#{p?.numero_pedido || String(p?._id || '').slice(-6)}</TableCell>
-                    {modoTodosLocales && <TableCell>{p?.__localNombre || '-'}</TableCell>}
-                    <TableCell>{new Date(p?.fecha || Date.now()).toLocaleString()}</TableCell>
-                    <TableCell>{p?.cliente_nombre || '-'}</TableCell>
-                    <TableCell>{p?.cliente_telefono || '-'}</TableCell>
-                    <TableCell>{getDireccionPedido(p)}</TableCell>
-                    <TableCell>${Number(p?.total || 0).toLocaleString('es-CL')}</TableCell>
-                    <TableCell>
-                      <Chip size="small" color={estadoColor(p?.estado_pedido)} label={getEstadoLabel(p?.estado_pedido)} />
-                    </TableCell>
-                    <TableCell>
-                      {esAdmin ? (
-                        <FormControl fullWidth size="small">
-                          <InputLabel>Asignado</InputLabel>
-                          <Select
-                            label="Asignado"
-                            value={p?.repartidor_asignado?._id || ''}
-                            onChange={(e) => cambiarRepartidor(p._id, e.target.value)}
-                          >
-                            <MenuItem value="">Sin asignar</MenuItem>
-                            {repartidores.map((r) => (
-                              <MenuItem key={r._id} value={r._id}>{r.nombre || r.email}</MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      ) : (
-                        p?.repartidor_asignado?.nombre || 'Sin asignar'
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <FormControl size="small" sx={{ minWidth: 220 }}>
-                          <InputLabel>Estado</InputLabel>
-                          <Select
-                            label="Estado"
-                            value={String(p?.estado_pedido || 'pendiente').toLowerCase()}
-                            onChange={(e) => cambiarEstado(p._id, e.target.value)}
-                          >
-                            {opcionesEstado.map((estado) => (
-                              <MenuItem key={estado.value} value={estado.value}>{estado.label}</MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          onClick={() => abrirDetallePedido(p)}
-                        >
-                          Ver info
-                        </Button>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {pedidosFiltrados.length === 0 && (
+          {modoTodosLocales ? (
+            <Stack spacing={2}>
+              {pedidosPorLocal.map((grupo) => (
+                <Paper key={grupo.localId} sx={{ overflowX: 'auto', p: 1 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, px: 1, py: 0.5 }}>
+                    {grupo.localNombre}
+                  </Typography>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>N orden</TableCell>
+                        <TableCell>Fecha</TableCell>
+                        <TableCell>Cliente</TableCell>
+                        <TableCell>Telefono</TableCell>
+                        <TableCell>Direccion</TableCell>
+                        <TableCell>Total</TableCell>
+                        <TableCell>Estado</TableCell>
+                        <TableCell>Repartidor</TableCell>
+                        <TableCell>Acciones</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {grupo.pedidos.map((p) => (
+                        <TableRow key={p._id} hover>
+                          <TableCell>#{p?.numero_pedido || String(p?._id || '').slice(-6)}</TableCell>
+                          <TableCell>{new Date(p?.fecha || Date.now()).toLocaleString()}</TableCell>
+                          <TableCell>{p?.cliente_nombre || '-'}</TableCell>
+                          <TableCell>{p?.cliente_telefono || '-'}</TableCell>
+                          <TableCell>{getDireccionPedido(p)}</TableCell>
+                          <TableCell>${Number(p?.total || 0).toLocaleString('es-CL')}</TableCell>
+                          <TableCell>
+                            <Chip size="small" color={estadoColor(p?.estado_pedido)} label={getEstadoLabel(p?.estado_pedido)} />
+                          </TableCell>
+                          <TableCell>
+                            {esAdmin ? (
+                              <FormControl fullWidth size="small">
+                                <InputLabel>Asignado</InputLabel>
+                                <Select
+                                  label="Asignado"
+                                  value={p?.repartidor_asignado?._id || ''}
+                                  onChange={(e) => cambiarRepartidor(p._id, e.target.value)}
+                                >
+                                  <MenuItem value="">Sin asignar</MenuItem>
+                                  {repartidores.map((r) => (
+                                    <MenuItem key={r._id} value={r._id}>{r.nombre || r.email}</MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                            ) : (
+                              p?.repartidor_asignado?.nombre || 'Sin asignar'
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <FormControl size="small" sx={{ minWidth: 220 }}>
+                                <InputLabel>Estado</InputLabel>
+                                <Select
+                                  label="Estado"
+                                  value={String(p?.estado_pedido || 'pendiente').toLowerCase()}
+                                  onChange={(e) => cambiarEstado(p._id, e.target.value)}
+                                >
+                                  {opcionesEstado.map((estado) => (
+                                    <MenuItem key={estado.value} value={estado.value}>{estado.label}</MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                              <Button variant="outlined" size="small" onClick={() => abrirDetallePedido(p)}>
+                                Ver info
+                              </Button>
+                            </Stack>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </Paper>
+              ))}
+              {pedidosPorLocal.length === 0 && (
+                <Paper sx={{ p: 2 }}>
+                  <Typography align="center">{loading ? 'Cargando...' : 'No hay repartos en esta vista.'}</Typography>
+                </Paper>
+              )}
+            </Stack>
+          ) : (
+            <Paper sx={{ overflowX: 'auto' }}>
+              <Table size="small">
+                <TableHead>
                   <TableRow>
-                    <TableCell colSpan={modoTodosLocales ? 10 : 9} align="center">{loading ? 'Cargando...' : 'No hay repartos en esta vista.'}</TableCell>
+                    <TableCell>N orden</TableCell>
+                    <TableCell>Fecha</TableCell>
+                    <TableCell>Cliente</TableCell>
+                    <TableCell>Telefono</TableCell>
+                    <TableCell>Direccion</TableCell>
+                    <TableCell>Total</TableCell>
+                    <TableCell>Estado</TableCell>
+                    <TableCell>Repartidor</TableCell>
+                    <TableCell>Acciones</TableCell>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </Paper>
+                </TableHead>
+                <TableBody>
+                  {pedidosFiltrados.map((p) => (
+                    <TableRow key={p._id} hover>
+                      <TableCell>#{p?.numero_pedido || String(p?._id || '').slice(-6)}</TableCell>
+                      <TableCell>{new Date(p?.fecha || Date.now()).toLocaleString()}</TableCell>
+                      <TableCell>{p?.cliente_nombre || '-'}</TableCell>
+                      <TableCell>{p?.cliente_telefono || '-'}</TableCell>
+                      <TableCell>{getDireccionPedido(p)}</TableCell>
+                      <TableCell>${Number(p?.total || 0).toLocaleString('es-CL')}</TableCell>
+                      <TableCell>
+                        <Chip size="small" color={estadoColor(p?.estado_pedido)} label={getEstadoLabel(p?.estado_pedido)} />
+                      </TableCell>
+                      <TableCell>
+                        {esAdmin ? (
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Asignado</InputLabel>
+                            <Select
+                              label="Asignado"
+                              value={p?.repartidor_asignado?._id || ''}
+                              onChange={(e) => cambiarRepartidor(p._id, e.target.value)}
+                            >
+                              <MenuItem value="">Sin asignar</MenuItem>
+                              {repartidores.map((r) => (
+                                <MenuItem key={r._id} value={r._id}>{r.nombre || r.email}</MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        ) : (
+                          p?.repartidor_asignado?.nombre || 'Sin asignar'
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <FormControl size="small" sx={{ minWidth: 220 }}>
+                            <InputLabel>Estado</InputLabel>
+                            <Select
+                              label="Estado"
+                              value={String(p?.estado_pedido || 'pendiente').toLowerCase()}
+                              onChange={(e) => cambiarEstado(p._id, e.target.value)}
+                            >
+                              {opcionesEstado.map((estado) => (
+                                <MenuItem key={estado.value} value={estado.value}>{estado.label}</MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <Button variant="outlined" size="small" onClick={() => abrirDetallePedido(p)}>
+                            Ver info
+                          </Button>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {pedidosFiltrados.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={9} align="center">{loading ? 'Cargando...' : 'No hay repartos en esta vista.'}</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </Paper>
+          )}
         </Box>
 
         <Paper sx={{ p: 2, mt: 2 }}>
