@@ -49,10 +49,15 @@ API.interceptors.request.use((config) => {
     localId = parseLocalStorageId('localSeleccionadoRepartidor');
   }
 
+  if (localId === '__all__') {
+    localId = '';
+  }
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  if (localId && (role === 'superadmin' || role === 'repartidor')) {
+  const hasExplicitLocalHeader = Boolean(config?.headers?.['x-local-id']);
+  if (!hasExplicitLocalHeader && localId && (role === 'superadmin' || role === 'repartidor')) {
     config.headers['x-local-id'] = localId;
   }
 

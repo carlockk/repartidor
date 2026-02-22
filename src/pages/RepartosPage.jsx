@@ -152,7 +152,7 @@ export default function RepartosPage() {
   const esRepartidor = rol === 'repartidor';
   const esRepartidorGlobal = esRepartidor && !localTokenId;
   const requiereSelectorLocal = esSuperadmin || esRepartidorGlobal;
-  const modoTodosLocales = esSuperadmin && localRepartidor === TODOS_LOCALES;
+  const modoTodosLocales = requiereSelectorLocal && localRepartidor === TODOS_LOCALES;
   const permitido = esAdmin || esRepartidor;
 
   useEffect(() => {
@@ -185,7 +185,7 @@ export default function RepartosPage() {
         const data = Array.isArray(res?.data) ? res.data : [];
         setLocalesDisponibles(data);
         if (!localRepartidor && data.length > 0) {
-          const defaultLocal = esSuperadmin ? TODOS_LOCALES : data[0]._id;
+          const defaultLocal = requiereSelectorLocal ? TODOS_LOCALES : data[0]._id;
           setLocalRepartidor(defaultLocal);
           localStorage.setItem('localSeleccionadoRepartidor', JSON.stringify(defaultLocal));
         }
@@ -194,7 +194,7 @@ export default function RepartosPage() {
       }
     };
     cargarLocales();
-  }, [requiereSelectorLocal, esSuperadmin, localRepartidor]);
+  }, [requiereSelectorLocal, localRepartidor]);
 
   const persistSeen = () => {
     localStorage.setItem('repartidor_alert_seen', JSON.stringify(Array.from(seenRef.current).slice(-300)));
@@ -417,7 +417,7 @@ export default function RepartosPage() {
                     localStorage.setItem('localSeleccionadoRepartidor', JSON.stringify(value));
                   }}
                 >
-                  {esSuperadmin && (
+                  {requiereSelectorLocal && (
                     <MenuItem value={TODOS_LOCALES}>Todos los locales</MenuItem>
                   )}
                   {localesDisponibles.map((local) => (
