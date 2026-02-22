@@ -12,6 +12,16 @@ API.interceptors.request.use((config) => {
   let token = '';
   let role = '';
   let localId = '';
+  const parseLocalStorageId = (key) => {
+    const raw = localStorage.getItem(key);
+    if (!raw) return '';
+    try {
+      const parsed = JSON.parse(raw);
+      return typeof parsed === 'string' ? parsed : parsed?._id || '';
+    } catch {
+      return '';
+    }
+  };
 
   if (stored) {
     try {
@@ -22,11 +32,10 @@ API.interceptors.request.use((config) => {
         localId = typeof usuario?.local === 'string' ? usuario.local : usuario?.local?._id || '';
       }
       if (role === 'superadmin') {
-        const selected = localStorage.getItem('localSeleccionado');
-        if (selected) {
-          const parsed = JSON.parse(selected);
-          localId = typeof parsed === 'string' ? parsed : parsed?._id || '';
-        }
+        localId =
+          parseLocalStorageId('localSeleccionadoRepartidor') ||
+          parseLocalStorageId('localSeleccionado') ||
+          '';
       }
     } catch {
       // ignore parse errors
@@ -34,15 +43,7 @@ API.interceptors.request.use((config) => {
   }
 
   if (role === 'repartidor' && !localId) {
-    const selectedRepartidorLocal = localStorage.getItem('localSeleccionadoRepartidor');
-    if (selectedRepartidorLocal) {
-      try {
-        const parsed = JSON.parse(selectedRepartidorLocal);
-        localId = typeof parsed === 'string' ? parsed : parsed?._id || '';
-      } catch {
-        // ignore parse errors
-      }
-    }
+    localId = parseLocalStorageId('localSeleccionadoRepartidor');
   }
 
   if (token) {

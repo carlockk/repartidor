@@ -139,9 +139,11 @@ export default function RepartosPage() {
 
   const rol = usuario?.rol || '';
   const localTokenId = getLocalIdFromUser(usuario);
+  const esSuperadmin = rol === 'superadmin';
   const esAdmin = rol === 'admin' || rol === 'superadmin';
   const esRepartidor = rol === 'repartidor';
   const esRepartidorGlobal = esRepartidor && !localTokenId;
+  const requiereSelectorLocal = esSuperadmin || esRepartidorGlobal;
   const permitido = esAdmin || esRepartidor;
 
   useEffect(() => {
@@ -154,7 +156,7 @@ export default function RepartosPage() {
   }, []);
 
   useEffect(() => {
-    if (!esRepartidorGlobal) return;
+    if (!requiereSelectorLocal) return;
     const stored = localStorage.getItem('localSeleccionadoRepartidor');
     if (!stored) return;
     try {
@@ -164,10 +166,10 @@ export default function RepartosPage() {
     } catch {
       // ignore
     }
-  }, [esRepartidorGlobal]);
+  }, [requiereSelectorLocal]);
 
   useEffect(() => {
-    if (!esRepartidorGlobal) return;
+    if (!requiereSelectorLocal) return;
     const cargarLocales = async () => {
       try {
         const res = await obtenerLocales();
@@ -182,7 +184,7 @@ export default function RepartosPage() {
       }
     };
     cargarLocales();
-  }, [esRepartidorGlobal]);
+  }, [requiereSelectorLocal]);
 
   const persistSeen = () => {
     localStorage.setItem('repartidor_alert_seen', JSON.stringify(Array.from(seenRef.current).slice(-300)));
@@ -190,7 +192,7 @@ export default function RepartosPage() {
 
   const cargarBase = async ({ mostrarLoading = true } = {}) => {
     if (!permitido) return;
-    if (esRepartidorGlobal && !localRepartidor) {
+    if (requiereSelectorLocal && !localRepartidor) {
       setPedidos([]);
       setResumen({ totalHistorico: 0, totalMes: 0, totalMesEntregados: 0 });
       setError('Selecciona un local para ver repartos.');
@@ -332,7 +334,7 @@ export default function RepartosPage() {
 
         <Paper sx={{ p: 2, mb: 2 }}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', md: 'center' }}>
-            {esRepartidorGlobal && (
+            {requiereSelectorLocal && (
               <FormControl sx={{ minWidth: 240 }} size="small">
                 <InputLabel>Local activo</InputLabel>
                 <Select
