@@ -329,7 +329,7 @@ export default function RepartosPage() {
     cargarBase();
     const id = setInterval(() => {
       cargarBase({ mostrarLoading: false });
-    }, 15000);
+    }, 5000);
     return () => clearInterval(id);
   }, [mes, rol, localRepartidor]);
 
@@ -371,6 +371,19 @@ export default function RepartosPage() {
     } catch (err) {
       alert(err?.response?.data?.error || 'No se pudo asignar repartidor');
     }
+  };
+
+  const abrirDetallePedido = (pedido, { moverALocalPedido = false } = {}) => {
+    if (!pedido) return;
+    if (moverALocalPedido && requiereSelectorLocal) {
+      const localIdPedido = getPedidoLocalId(pedido);
+      if (localIdPedido) {
+        setLocalRepartidor(localIdPedido);
+        localStorage.setItem('localSeleccionadoRepartidor', JSON.stringify(localIdPedido));
+      }
+    }
+    setTab('abiertos');
+    setDetallePedido(pedido);
   };
 
   if (!usuario) return <Navigate to="/login" replace />;
@@ -495,6 +508,14 @@ export default function RepartosPage() {
                         ))}
                       </Select>
                     </FormControl>
+
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => abrirDetallePedido(p)}
+                    >
+                      Ver info
+                    </Button>
                   </Stack>
                 </CardContent>
               </Card>
@@ -557,18 +578,27 @@ export default function RepartosPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <FormControl size="small" sx={{ minWidth: 220 }}>
-                        <InputLabel>Estado</InputLabel>
-                        <Select
-                          label="Estado"
-                          value={String(p?.estado_pedido || 'pendiente').toLowerCase()}
-                          onChange={(e) => cambiarEstado(p._id, e.target.value)}
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <FormControl size="small" sx={{ minWidth: 220 }}>
+                          <InputLabel>Estado</InputLabel>
+                          <Select
+                            label="Estado"
+                            value={String(p?.estado_pedido || 'pendiente').toLowerCase()}
+                            onChange={(e) => cambiarEstado(p._id, e.target.value)}
+                          >
+                            {opcionesEstado.map((estado) => (
+                              <MenuItem key={estado.value} value={estado.value}>{estado.label}</MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => abrirDetallePedido(p)}
                         >
-                          {opcionesEstado.map((estado) => (
-                            <MenuItem key={estado.value} value={estado.value}>{estado.label}</MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
+                          Ver info
+                        </Button>
+                      </Stack>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -612,7 +642,7 @@ export default function RepartosPage() {
           <Button
             variant="contained"
             onClick={() => {
-              setDetallePedido(alertaPedido);
+              abrirDetallePedido(alertaPedido, { moverALocalPedido: true });
               setAlertaPedido(null);
             }}
           >
