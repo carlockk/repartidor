@@ -7,6 +7,9 @@ const API = axios.create({
   baseURL: API_BASE,
 });
 
+const withLocalHeader = (localId) =>
+  localId ? { headers: { 'x-local-id': localId } } : {};
+
 API.interceptors.request.use((config) => {
   const stored = localStorage.getItem('usuario_reparto');
   let token = '';
@@ -58,12 +61,19 @@ API.interceptors.request.use((config) => {
 
 export const loginUsuario = (data) => API.post('/auth/login', data);
 export const obtenerLocales = () => API.get('/locales');
-export const obtenerPedidosReparto = (params) => API.get('/ventasCliente/local/pedidos', { params });
-export const obtenerEstadosRepartidor = () => API.get('/ventasCliente/local/estados-repartidor');
-export const actualizarEstadoPedido = (id, data) => API.patch(`/ventasCliente/local/pedidos/${id}/estado`, data);
-export const obtenerRepartidores = () => API.get('/ventasCliente/local/repartidores');
+export const obtenerPedidosReparto = (params, localId) =>
+  API.get('/ventasCliente/local/pedidos', { params, ...withLocalHeader(localId) });
+export const obtenerEstadosRepartidor = (localId) =>
+  API.get('/ventasCliente/local/estados-repartidor', withLocalHeader(localId));
+export const actualizarEstadoPedido = (id, data, localId) =>
+  API.patch(`/ventasCliente/local/pedidos/${id}/estado`, data, withLocalHeader(localId));
+export const obtenerRepartidores = (localId) =>
+  API.get('/ventasCliente/local/repartidores', withLocalHeader(localId));
 export const asignarRepartidor = (id, repartidor_id) =>
   API.patch(`/ventasCliente/local/pedidos/${id}/repartidor`, { repartidor_id });
-export const obtenerResumenRepartos = (params) => API.get('/ventasCliente/local/repartos/resumen', { params });
+export const asignarRepartidorConLocal = (id, repartidor_id, localId) =>
+  API.patch(`/ventasCliente/local/pedidos/${id}/repartidor`, { repartidor_id }, withLocalHeader(localId));
+export const obtenerResumenRepartos = (params, localId) =>
+  API.get('/ventasCliente/local/repartos/resumen', { params, ...withLocalHeader(localId) });
 
 export default API;

@@ -33,7 +33,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   actualizarEstadoPedido,
-  asignarRepartidor,
+  asignarRepartidorConLocal,
   obtenerLocales,
   obtenerEstadosRepartidor,
   obtenerPedidosReparto,
@@ -42,6 +42,7 @@ import {
 } from '../services/api';
 
 const ESTADOS_CERRADOS = new Set(['entregado', 'cancelado', 'rechazado']);
+const TODOS_LOCALES = '__all__';
 
 const ESTADOS_REPARTIDOR_UI = [
   { value: 'repartidor llego al restaurante', label: 'Repartidor llego al restaurante' },
@@ -120,6 +121,13 @@ const getLocalIdFromUser = (usuario) => {
   return '';
 };
 
+const getPedidoLocalId = (pedido) => {
+  if (typeof pedido?.__localId === 'string') return pedido.__localId;
+  if (typeof pedido?.local === 'string') return pedido.local;
+  if (pedido?.local?._id) return pedido.local._id;
+  return '';
+};
+
 export default function RepartosPage() {
   const { usuario, logout } = useAuth();
   const [pedidos, setPedidos] = useState([]);
@@ -144,6 +152,7 @@ export default function RepartosPage() {
   const esRepartidor = rol === 'repartidor';
   const esRepartidorGlobal = esRepartidor && !localTokenId;
   const requiereSelectorLocal = esSuperadmin || esRepartidorGlobal;
+  const modoTodosLocales = esSuperadmin && localRepartidor === TODOS_LOCALES;
   const permitido = esAdmin || esRepartidor;
 
   useEffect(() => {
@@ -176,15 +185,16 @@ export default function RepartosPage() {
         const data = Array.isArray(res?.data) ? res.data : [];
         setLocalesDisponibles(data);
         if (!localRepartidor && data.length > 0) {
-          setLocalRepartidor(data[0]._id);
-          localStorage.setItem('localSeleccionadoRepartidor', JSON.stringify(data[0]._id));
+          const defaultLocal = esSuperadmin ? TODOS_LOCALES : data[0]._id;
+          setLocalRepartidor(defaultLocal);
+          localStorage.setItem('localSeleccionadoRepartidor', JSON.stringify(defaultLocal));
         }
       } catch {
         setLocalesDisponibles([]);
       }
     };
     cargarLocales();
-  }, [requiereSelectorLocal]);
+  }, [requiereSelectorLocal, esSuperadmin, localRepartidor]);
 
   const persistSeen = () => {
     localStorage.setItem('repartidor_alert_seen', JSON.stringify(Array.from(seenRef.current).slice(-300)));
@@ -204,34 +214,99 @@ export default function RepartosPage() {
     try {
       const { anio, mes: mesNum } = parseMonthValue(mes);
       const pedidosParams = { solo_domicilio: true, tipo_pedido: 'delivery', anio, mes: mesNum };
-      const [pedidosRes, resumenRes, repartidoresRes, estadosRes] = await Promise.allSettled([
-        obtenerPedidosReparto(pedidosParams),
-        obtenerResumenRepartos({ anio, mes: mesNum }),
-        esAdmin ? obtenerRepartidores() : Promise.resolve({ data: [] }),
-        obtenerEstadosRepartidor(),
-      ]);
+      let pedidosCargados = [];
+      if (modoTodosLocales) {
+        const locales = localesDisponibles.filter((local) => local?._id);
+        const resultados = await Promise.all(
+          locales.map(async (local) => {
+            const localId = local._id;
+            const [pedidosRes, resumenRes, repartidoresRes, estadosRes] = await Promise.allSettled([
+              obtenerPedidosReparto(pedidosParams, localId),
+              obtenerResumenRepartos({ anio, mes: mesNum }, localId),
+              esAdmin ? obtenerRepartidores(localId) : Promise.resolve({ data: [] }),
+              obtenerEstadosRepartidor(localId),
+            ]);
+            return { local, pedidosRes, resumenRes, repartidoresRes, estadosRes };
+          })
+        );
 
-      const data = pedidosRes.status === 'fulfilled' && Array.isArray(pedidosRes.value?.data)
-        ? pedidosRes.value.data
-        : [];
-      setPedidos(data);
-      setResumen(
-        resumenRes.status === 'fulfilled'
-          ? (resumenRes.value?.data || { totalHistorico: 0, totalMes: 0, totalMesEntregados: 0 })
-          : { totalHistorico: 0, totalMes: 0, totalMesEntregados: 0 }
-      );
-      setRepartidores(
-        repartidoresRes.status === 'fulfilled' && Array.isArray(repartidoresRes.value?.data)
-          ? repartidoresRes.value.data
-          : []
-      );
-      setEstadosDisponibles(
-        estadosRes.status === 'fulfilled' && Array.isArray(estadosRes.value?.data?.estados)
-          ? estadosRes.value.data.estados.map((e) => String(e).toLowerCase())
-          : []
-      );
+        const pedidosAll = [];
+        const repartidoresMap = new Map();
+        const estadosSet = new Set();
+        const resumenAll = { totalHistorico: 0, totalMes: 0, totalMesEntregados: 0 };
 
-      const abiertos = data
+        for (const bloque of resultados) {
+          if (bloque.pedidosRes.status === 'fulfilled' && Array.isArray(bloque.pedidosRes.value?.data)) {
+            const dataLocal = bloque.pedidosRes.value.data.map((pedido) => ({
+              ...pedido,
+              __localId: bloque.local._id,
+              __localNombre: bloque.local.nombre || 'Local',
+            }));
+            pedidosAll.push(...dataLocal);
+          }
+          if (bloque.resumenRes.status === 'fulfilled') {
+            const r = bloque.resumenRes.value?.data || {};
+            resumenAll.totalHistorico += Number(r.totalHistorico || 0);
+            resumenAll.totalMes += Number(r.totalMes || 0);
+            resumenAll.totalMesEntregados += Number(r.totalMesEntregados || 0);
+          }
+          if (bloque.repartidoresRes.status === 'fulfilled' && Array.isArray(bloque.repartidoresRes.value?.data)) {
+            for (const rep of bloque.repartidoresRes.value.data) {
+              if (rep?._id && !repartidoresMap.has(rep._id)) {
+                repartidoresMap.set(rep._id, rep);
+              }
+            }
+          }
+          if (bloque.estadosRes.status === 'fulfilled' && Array.isArray(bloque.estadosRes.value?.data?.estados)) {
+            for (const estado of bloque.estadosRes.value.data.estados) {
+              estadosSet.add(String(estado).toLowerCase());
+            }
+          }
+        }
+
+        setPedidos(pedidosAll);
+        setResumen(resumenAll);
+        setRepartidores(Array.from(repartidoresMap.values()));
+        setEstadosDisponibles(Array.from(estadosSet));
+        pedidosCargados = pedidosAll;
+      } else {
+        const localActivo = requiereSelectorLocal ? localRepartidor : undefined;
+        const [pedidosRes, resumenRes, repartidoresRes, estadosRes] = await Promise.allSettled([
+          obtenerPedidosReparto(pedidosParams, localActivo),
+          obtenerResumenRepartos({ anio, mes: mesNum }, localActivo),
+          esAdmin ? obtenerRepartidores(localActivo) : Promise.resolve({ data: [] }),
+          obtenerEstadosRepartidor(localActivo),
+        ]);
+
+        const data = pedidosRes.status === 'fulfilled' && Array.isArray(pedidosRes.value?.data)
+          ? pedidosRes.value.data
+          : [];
+        setPedidos(data);
+        setResumen(
+          resumenRes.status === 'fulfilled'
+            ? (resumenRes.value?.data || { totalHistorico: 0, totalMes: 0, totalMesEntregados: 0 })
+            : { totalHistorico: 0, totalMes: 0, totalMesEntregados: 0 }
+        );
+        setRepartidores(
+          repartidoresRes.status === 'fulfilled' && Array.isArray(repartidoresRes.value?.data)
+            ? repartidoresRes.value.data
+            : []
+        );
+        setEstadosDisponibles(
+          estadosRes.status === 'fulfilled' && Array.isArray(estadosRes.value?.data?.estados)
+            ? estadosRes.value.data.estados.map((e) => String(e).toLowerCase())
+            : []
+        );
+        pedidosCargados = data;
+
+        if (pedidosRes.status === 'rejected') {
+          const apiMsg = pedidosRes.reason?.response?.data?.error || '';
+          setError(apiMsg || 'No se pudieron cargar los repartos');
+        } else if (estadosRes.status === 'rejected') {
+          setError('');
+        }
+      }
+      const abiertos = pedidosCargados
         .filter((p) => !ESTADOS_CERRADOS.has(String(p?.estado_pedido || '').toLowerCase()))
         .sort((a, b) => new Date(b?.fecha || 0).getTime() - new Date(a?.fecha || 0).getTime());
 
@@ -241,14 +316,6 @@ export default function RepartosPage() {
         emitirSonidoNuevoPedido();
         seenRef.current.add(String(nuevo._id));
         persistSeen();
-      }
-
-      if (pedidosRes.status === 'rejected') {
-        const apiMsg = pedidosRes.reason?.response?.data?.error || '';
-        setError(apiMsg || 'No se pudieron cargar los repartos');
-      } else if (estadosRes.status === 'rejected') {
-        // Fallback silencioso: pedidos cargan aunque falle configuracion de estados
-        setError('');
       }
     } catch (err) {
       setError(err?.response?.data?.error || 'No se pudieron cargar los repartos');
@@ -285,7 +352,9 @@ export default function RepartosPage() {
 
   const cambiarEstado = async (id, estado) => {
     try {
-      await actualizarEstadoPedido(id, { estado, nota: notaEstado });
+      const pedido = pedidos.find((item) => item?._id === id);
+      const localId = getPedidoLocalId(pedido);
+      await actualizarEstadoPedido(id, { estado, nota: notaEstado }, localId || undefined);
       setNotaEstado('');
       await cargarBase({ mostrarLoading: false });
     } catch (err) {
@@ -295,7 +364,9 @@ export default function RepartosPage() {
 
   const cambiarRepartidor = async (id, repartidorId) => {
     try {
-      await asignarRepartidor(id, repartidorId || null);
+      const pedido = pedidos.find((item) => item?._id === id);
+      const localId = getPedidoLocalId(pedido);
+      await asignarRepartidorConLocal(id, repartidorId || null, localId || undefined);
       await cargarBase({ mostrarLoading: false });
     } catch (err) {
       alert(err?.response?.data?.error || 'No se pudo asignar repartidor');
@@ -346,6 +417,9 @@ export default function RepartosPage() {
                     localStorage.setItem('localSeleccionadoRepartidor', JSON.stringify(value));
                   }}
                 >
+                  {esSuperadmin && (
+                    <MenuItem value={TODOS_LOCALES}>Todos los locales</MenuItem>
+                  )}
                   {localesDisponibles.map((local) => (
                     <MenuItem key={local._id} value={local._id}>{local.nombre}</MenuItem>
                   ))}
@@ -384,6 +458,9 @@ export default function RepartosPage() {
                       <Chip size="small" color={estadoColor(p?.estado_pedido)} label={getEstadoLabel(p?.estado_pedido)} />
                     </Stack>
                     <Typography variant="body2">{new Date(p?.fecha || Date.now()).toLocaleString()}</Typography>
+                    {modoTodosLocales && (
+                      <Typography variant="body2"><strong>Local:</strong> {p?.__localNombre || '-'}</Typography>
+                    )}
                     <Divider />
                     <Typography variant="body2"><strong>Cliente:</strong> {p?.cliente_nombre || '-'}</Typography>
                     <Typography variant="body2"><strong>Telefono:</strong> {p?.cliente_telefono || '-'}</Typography>
@@ -436,6 +513,7 @@ export default function RepartosPage() {
               <TableHead>
                 <TableRow>
                   <TableCell>N orden</TableCell>
+                  {modoTodosLocales && <TableCell>Local</TableCell>}
                   <TableCell>Fecha</TableCell>
                   <TableCell>Cliente</TableCell>
                   <TableCell>Telefono</TableCell>
@@ -450,6 +528,7 @@ export default function RepartosPage() {
                 {pedidosFiltrados.map((p) => (
                   <TableRow key={p._id} hover>
                     <TableCell>#{p?.numero_pedido || String(p?._id || '').slice(-6)}</TableCell>
+                    {modoTodosLocales && <TableCell>{p?.__localNombre || '-'}</TableCell>}
                     <TableCell>{new Date(p?.fecha || Date.now()).toLocaleString()}</TableCell>
                     <TableCell>{p?.cliente_nombre || '-'}</TableCell>
                     <TableCell>{p?.cliente_telefono || '-'}</TableCell>
@@ -495,7 +574,7 @@ export default function RepartosPage() {
                 ))}
                 {pedidosFiltrados.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9} align="center">{loading ? 'Cargando...' : 'No hay repartos en esta vista.'}</TableCell>
+                    <TableCell colSpan={modoTodosLocales ? 10 : 9} align="center">{loading ? 'Cargando...' : 'No hay repartos en esta vista.'}</TableCell>
                   </TableRow>
                 )}
               </TableBody>
