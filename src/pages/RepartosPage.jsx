@@ -331,7 +331,7 @@ export default function RepartosPage() {
       cargarBase({ mostrarLoading: false });
     }, 5000);
     return () => clearInterval(id);
-  }, [mes, rol, localRepartidor]);
+  }, [mes, rol, localRepartidor, localesDisponibles.length, modoTodosLocales]);
 
   const pedidosOrdenados = useMemo(() => {
     return [...pedidos].sort((a, b) => new Date(b?.fecha || 0).getTime() - new Date(a?.fecha || 0).getTime());
